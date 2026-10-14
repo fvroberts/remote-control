@@ -45,6 +45,7 @@ For a slower network, run `python target.py --fps 10 --quality 50 --max-width 12
 ## Troubleshooting
 
 - **Missing packages:** run `install.bat`. It installs per-user packages and replaces legacy pygame with pygame-ce (both use `import pygame`). Package installation must be permitted by your device policy; TLS certificate verification remains enabled.
+- **Launcher window closes:** use the latest `.bat` files. They keep Command Prompt open and try both `python` and the Windows `py -3` launcher. To see errors from an older launcher, open Command Prompt in the project folder and run `cmd /d /k call start-target.bat` (or `start-host.bat` / `install.bat`). If your device blocks batch files, run `python target.py` or `python host.py` directly; the launchers do not bypass device policy.
 - **Connection timeout:** check the target is running, its IP is correct, both computers are reachable, and the firewall/network permits TCP 5050.
 - **Wrong or missing IP suggestion:** run `ipconfig` on the target and use the active Wi-Fi/Ethernet IPv4 address.
 - **Port already in use:** close the previous target process or use a different `--port` on both scripts.
