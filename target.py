@@ -1,14 +1,51 @@
-"""Replay input from an authenticated host on a trusted network."""
+"""Stream the primary screen and replay authenticated input on a trusted network."""
 import argparse
 import hmac
 import json
+import io
 import math
 import os
 import socket
+import struct
+import threading
+import time
+
+
+def stream_screen(connection, stopped, fps, quality, max_width):
+    try:
+        import mss
+        from PIL import Image
+        with mss.mss() as capture:
+            monitor = capture.monitors[1]
+            while not stopped.is_set():
+                started = time.monotonic()
+                shot = capture.grab(monitor)
+                image = Image.frombytes("RGB", shot.size, shot.rgb)
+                if image.width > max_width:
+                    height = max(1, round(image.height * max_width / image.width))
+                    image = image.resize((max_width, height), Image.Resampling.BILINEAR)
+                with io.BytesIO() as buffer:
+                    image.save(buffer, format="JPEG", quality=quality)
+                    frame = buffer.getvalue()
+                if len(frame) > 16 * 1024 * 1024:
+                    raise ValueError("Screen frame too large")
+                connection.sendall(struct.pack("!I", len(frame)) + frame)
+                stopped.wait(max(0, 1 / fps - (time.monotonic() - started)))
+    except Exception as error:
+        if not stopped.is_set():
+            print(f"Screen stream ended: {error}", flush=True)
+    finally:
+        stopped.set()
+        try:
+            connection.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
 
 
 def replay(event, gui, keys, buttons):
     kind = event.get("type")
+    if kind == "ping":
+        return
     if kind == "reset":
         release_all(gui, keys, buttons)
         return
@@ -66,7 +103,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bind", default="127.0.0.1", help="Listen address; use your LAN IP for remote hosts")
     parser.add_argument("--port", type=int, default=5050)
+    parser.add_argument("--fps", type=int, default=15, help="Screen frames per second (1–60)")
+    parser.add_argument("--quality", type=int, default=70, help="JPEG quality (1–95)")
+    parser.add_argument("--max-width", type=int, default=1600, help="Maximum streamed image width")
     args = parser.parse_args()
+    if not 1 <= args.fps <= 60 or not 1 <= args.quality <= 95 or not 64 <= args.max_width <= 7680:
+        parser.error("Use fps 1–60, quality 1–95, and max-width 64–7680")
     token = os.environ.get("REMOTE_CONTROL_TOKEN")
     if not token:
         parser.error("Set REMOTE_CONTROL_TOKEN on both machines")
@@ -85,6 +127,8 @@ def main():
                 with connection:
                     connection.settimeout(10)
                     connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                    stopped = threading.Event()
+                    streamer = None
                     try:
                         with connection.makefile("rb") as reader:
                             auth = json.loads(reader.readline(4097))
@@ -93,8 +137,11 @@ def main():
                                 print("Rejected unauthenticated connection", flush=True)
                                 continue
                             connection.sendall(b'{"ok":true}\n')
-                            connection.settimeout(None)
+                            connection.settimeout(10)
                             print(f"Host connected: {address[0]}", flush=True)
+                            streamer = threading.Thread(target=stream_screen,
+                                args=(connection, stopped, args.fps, args.quality, args.max_width), daemon=True)
+                            streamer.start()
                             while True:
                                 line = reader.readline(4097)
                                 if not line:
@@ -111,6 +158,13 @@ def main():
                     except (OSError, ValueError, KeyError, TypeError) as error:
                         print(f"Connection ended: {error}", flush=True)
                     finally:
+                        stopped.set()
+                        try:
+                            connection.shutdown(socket.SHUT_RDWR)
+                        except OSError:
+                            pass
+                        if streamer:
+                            streamer.join(timeout=2)
                         release_all(gui, keys, buttons)
         except KeyboardInterrupt:
             pass
