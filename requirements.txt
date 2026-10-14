@@ -1,4 +1,4 @@
 PyAutoGUI==0.9.54
-pygame==2.6.1
+pygame-ce==2.5.8
 mss==10.1.0
-Pillow==11.3.0
+Pillow==12.3.0

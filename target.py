@@ -1,14 +1,22 @@
-"""Stream the primary screen and replay authenticated input on a trusted network."""
+"""Stream the primary screen and replay input on a trusted network. No authentication."""
 import argparse
-import hmac
 import json
 import io
 import math
-import os
 import socket
 import struct
 import threading
 import time
+
+
+def local_addresses():
+    """Best-effort address hints without contacting an external service."""
+    try:
+        addresses = {entry[4][0] for entry in socket.getaddrinfo(
+            socket.gethostname(), None, socket.AF_INET, socket.SOCK_STREAM)}
+        return sorted(address for address in addresses if not address.startswith("127."))
+    except OSError:
+        return []
 
 
 def stream_screen(connection, stopped, fps, quality, max_width):
@@ -101,7 +109,7 @@ def release_all(gui, keys, buttons):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--bind", default="127.0.0.1", help="Listen address; use your LAN IP for remote hosts")
+    parser.add_argument("--bind", default="0.0.0.0", help="Listen address (default: all IPv4 interfaces)")
     parser.add_argument("--port", type=int, default=5050)
     parser.add_argument("--fps", type=int, default=15, help="Screen frames per second (1–60)")
     parser.add_argument("--quality", type=int, default=70, help="JPEG quality (1–95)")
@@ -109,9 +117,6 @@ def main():
     args = parser.parse_args()
     if not 1 <= args.fps <= 60 or not 1 <= args.quality <= 95 or not 64 <= args.max_width <= 7680:
         parser.error("Use fps 1–60, quality 1–95, and max-width 64–7680")
-    token = os.environ.get("REMOTE_CONTROL_TOKEN")
-    if not token:
-        parser.error("Set REMOTE_CONTROL_TOKEN on both machines")
     import pyautogui as gui
     gui.PAUSE = 0
     gui.FAILSAFE = True
@@ -120,6 +125,12 @@ def main():
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         server.bind((args.bind, args.port))
         server.listen(1)
+        addresses = local_addresses() if args.bind == "0.0.0.0" else [args.bind]
+        if addresses:
+            print("On the host, enter one of these target addresses: " + ", ".join(addresses), flush=True)
+        else:
+            print("Find this device's Wi-Fi/Ethernet IPv4 address with ipconfig and enter it on the host.", flush=True)
+        print("No authentication. Use only on a trusted network; close this terminal when finished.", flush=True)
         print(f"Listening on {args.bind}:{args.port}. Move mouse to a screen corner to stop.", flush=True)
         try:
             while True:
@@ -131,11 +142,6 @@ def main():
                     streamer = None
                     try:
                         with connection.makefile("rb") as reader:
-                            auth = json.loads(reader.readline(4097))
-                            supplied = auth.get("token") if isinstance(auth, dict) else None
-                            if not isinstance(supplied, str) or not hmac.compare_digest(supplied.encode(), token.encode()):
-                                print("Rejected unauthenticated connection", flush=True)
-                                continue
                             connection.sendall(b'{"ok":true}\n')
                             connection.settimeout(10)
                             print(f"Host connected: {address[0]}", flush=True)
@@ -171,4 +177,9 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ImportError as error:
+        raise SystemExit(f"Missing dependency: {error}. Run install.bat on Windows.")
+    except OSError as error:
+        raise SystemExit(f"Target could not start: {error}. Close any previous target process and retry.")

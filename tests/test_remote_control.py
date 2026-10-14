@@ -121,7 +121,7 @@ class ProtocolTests(unittest.TestCase):
 
 
 class ViewerTests(unittest.TestCase):
-    def test_target_authentication_stream_and_input_over_tcp(self):
+    def test_target_stream_and_input_without_token_or_bind_argument(self):
         with socket.socket() as probe:
             probe.bind(("127.0.0.1", 0))
             port = probe.getsockname()[1]
@@ -147,7 +147,8 @@ sys.modules["pyautogui"] = gui
 with patch("mss.mss", Capture): target.main()
 '''
         process = subprocess.Popen([sys.executable, "-c", program, "--port", str(port)],
-                                   env={**os.environ, "REMOTE_CONTROL_TOKEN": "test-token"},
+                                   env={key: value for key, value in os.environ.items()
+                                        if key != "REMOTE_CONTROL_TOKEN"},
                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
         try:
             deadline = time.monotonic() + 5
@@ -160,10 +161,6 @@ with patch("mss.mss", Capture): target.main()
                         raise
                     time.sleep(.02)
             with connection:
-                connection.sendall(b'{"token":"wrong"}\n')
-                self.assertEqual(connection.recv(100), b"")
-            with socket.create_connection(("127.0.0.1", port), timeout=3) as connection:
-                connection.sendall(b'{"token":"test-token"}\n')
                 with connection.makefile("rb", buffering=0) as reader:
                     self.assertEqual(reader.readline(), b'{"ok":true}\n')
                 with Image.open(io.BytesIO(host.receive_frame(connection))) as frame:
@@ -177,7 +174,7 @@ with patch("mss.mss", Capture): target.main()
         finally:
             process.terminate()
             output, _ = process.communicate(timeout=5)
-        for message in ["Rejected unauthenticated connection", "DOWN ctrlleft", "DOWN c", "UP ctrlleft", "UP c"]:
+        for message in ["Listening on 0.0.0.0", "Host connected", "DOWN ctrlleft", "DOWN c", "UP ctrlleft", "UP c"]:
             self.assertIn(message, output)
 
     def test_real_viewer_render_input_and_focus_loss(self):
@@ -198,8 +195,7 @@ with patch("mss.mss", Capture): target.main()
                     with connection:
                         connection.settimeout(5)
                         with connection.makefile("rb") as reader:
-                            self.assertEqual(json.loads(reader.readline()), {"token": "test-token"})
-                            # Auth and frame in a single send catches buffering mistakes.
+                            # Greeting and frame in one send catch buffering mistakes.
                             connection.sendall(b'{"ok":true}\n' + struct.pack("!I", len(frame)) + frame)
                             for line in reader:
                                 received.append(json.loads(line))
@@ -233,12 +229,13 @@ with patch("mss.mss", Capture): target.main()
                 return [E(pygame.WINDOWFOCUSLOST)]
             return [E(pygame.KEYDOWN, key=pygame.K_x), E(pygame.QUIT)]
 
-        with patch.dict(os.environ, {"REMOTE_CONTROL_TOKEN": "test-token"}), \
-             patch.object(sys, "argv", ["host.py", "127.0.0.1", "--port", str(port)]), \
+        with patch.object(sys, "argv", ["host.py", "--port", str(port)]), \
+             patch("builtins.input", return_value="127.0.0.1") as prompt, \
              patch.object(pygame.image, "load", side_effect=load), \
              patch.object(pygame.event, "get", side_effect=events), \
              patch.object(pygame.key, "get_focused", return_value=True):
             host.main()
+            prompt.assert_called_once_with("Target IP address: ")
         self.assertTrue(finished.wait(5))
         thread.join(1)
         self.assertFalse(errors, errors)

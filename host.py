@@ -2,7 +2,6 @@
 import argparse
 import io
 import json
-import os
 import socket
 import struct
 import threading
@@ -70,21 +69,21 @@ def position(point, rect):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("target", help="Target IP address or hostname")
+    parser.add_argument("target", nargs="?", help="Target IP address or hostname (prompts if omitted)")
     parser.add_argument("--port", type=int, default=5050)
     args = parser.parse_args()
-    token = os.environ.get("REMOTE_CONTROL_TOKEN")
-    if not token:
-        parser.error("Set REMOTE_CONTROL_TOKEN on both machines")
+    if not args.target:
+        args.target = input("Target IP address: ").strip()
+    if not args.target:
+        parser.error("Enter the IP address shown by the target")
     import pygame
 
     with socket.create_connection((args.target, args.port), timeout=10) as connection:
         connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-        connection.sendall((json.dumps({"token": token}) + "\n").encode())
         # An unbuffered read leaves the first binary frame in the socket.
         with connection.makefile("rb", buffering=0) as reader:
             if reader.readline(1024) != b'{"ok":true}\n':
-                raise RuntimeError("Target rejected authentication")
+                raise RuntimeError("Unexpected server response. Update both devices to the latest scripts.")
         connection.settimeout(10)
         stopped = threading.Event()
         frame_lock = threading.Lock()
@@ -202,4 +201,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ImportError as error:
+        raise SystemExit(f"Missing dependency: {error}. Run install.bat on Windows.")
+    except OSError as error:
+        raise SystemExit(f"Connection failed: {error}. Check the target is running, its IP, and TCP port 5050 access.")
+    except KeyboardInterrupt:
+        pass
