@@ -204,7 +204,7 @@ if __name__ == "__main__":
     try:
         main()
     except ImportError as error:
-        raise SystemExit(f"Missing dependency: {error}. Run install.bat on Windows.")
+        raise SystemExit(f"Missing dependency: {error}. Run python -m pip install --user -r requirements.txt.")
     except OSError as error:
         raise SystemExit(f"Connection failed: {error}. Check the target is running, its IP, and TCP port 5050 access.")
     except KeyboardInterrupt:

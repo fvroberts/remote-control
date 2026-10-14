@@ -6,9 +6,11 @@ View the target's screen and control it from the host. Both computers need Pytho
 
 Put the latest project files on both computers and connect them to the same trusted network.
 
-1. **Install once:** double-click `install.bat` on each computer. No virtual environment, administrator install, or token is needed. If the current dependencies are already installed, skip this step.
-2. **Target (computer being controlled):** double-click `start-target.bat`. Leave its terminal open. It listens automatically and displays target IP address suggestions.
-3. **Host (computer you use):** double-click `start-host.bat`, enter the target's Wi-Fi/Ethernet IP, then click the viewer and press **F8** to enable control. Some laptops require **Fn+F8**.
+Open Command Prompt in the project folder on each computer.
+
+1. **Install once (skip if already installed):** run `python -m pip install --user --only-binary=pygame-ce,Pillow -r requirements.txt`. No virtual environment, administrator install, or token is needed.
+2. **Target (computer being controlled):** run `python target.py`. Leave its terminal open. It listens automatically and displays target IP address suggestions.
+3. **Host (computer you use):** run `python host.py`, enter the target's Wi-Fi/Ethernet IP, then click the viewer and press **F8** to enable control. Some laptops require **Fn+F8**.
 
 If Windows Firewall asks, allow Python on **Private networks**. Device policy or Wi-Fi client isolation can still require administrator help; these cannot be bypassed by the scripts. The firewall must permit inbound TCP port **5050** on the target from the host.
 
@@ -21,7 +23,7 @@ Update both scripts together. The previous token-based version is incompatible; 
 - **F8:** enable/pause control. Input starts paused.
 - **Switch away from the viewer:** control pauses and held keys/buttons release. Press F8 after returning to resume.
 - **Close the viewer:** disconnect. The target remains available until you stop it.
-- **Ctrl+C in the target terminal:** stop the target. Moving its mouse to a screen corner also triggers the PyAutoGUI emergency stop during input replay.
+- **Ctrl+C in the target terminal:** stop the target completely. Screen corners do not stop it.
 
 Clicking within the displayed image maps to the target's primary screen; black padding ignores clicks. Leaving the image during a drag releases held input. Shortcuts such as Ctrl+C work while the viewer has focus, but operating-system shortcuts like Alt+Tab and Ctrl+Alt+Delete may be intercepted locally. Use matching keyboard layouts. Unusual keys and non-ASCII text may not be supported.
 
@@ -44,8 +46,9 @@ For a slower network, run `python target.py --fps 10 --quality 50 --max-width 12
 
 ## Troubleshooting
 
-- **Missing packages:** run `install.bat`. It installs per-user packages and replaces legacy pygame with pygame-ce (both use `import pygame`). Package installation must be permitted by your device policy; TLS certificate verification remains enabled.
-- **Launcher window closes:** use the latest `.bat` files. They keep Command Prompt open and try both `python` and the Windows `py -3` launcher. To see errors from an older launcher, open Command Prompt in the project folder and run `cmd /d /k call start-target.bat` (or `start-host.bat` / `install.bat`). If your device blocks batch files, run `python target.py` or `python host.py` directly; the launchers do not bypass device policy.
+- **Missing packages:** run the install command above. Package installation must be permitted by your device policy; TLS certificate verification remains enabled.
+- **Legacy pygame installed:** run `python -m pip uninstall pygame`, then `python -m pip install --user --only-binary=:all: --force-reinstall pygame-ce==2.5.8`. The two packages share import files, so reinstall pygame-ce after removing pygame.
+- **Python command not found:** try `py -3` in place of `python` in the commands above.
 - **Connection timeout:** check the target is running, its IP is correct, both computers are reachable, and the firewall/network permits TCP 5050.
 - **Wrong or missing IP suggestion:** run `ipconfig` on the target and use the active Wi-Fi/Ethernet IPv4 address.
 - **Port already in use:** close the previous target process or use a different `--port` on both scripts.
@@ -55,7 +58,7 @@ For other platforms or an existing environment, install with `python -m pip inst
 
 ## Development checks
 
-Run `python -m unittest discover -s tests -v`. The tests exercise TCP connections, synthetic screen capture, JPEG decoding, viewer rendering, and simulated input. Real desktop capture, firewall prompts, Windows launchers, and OS shortcuts need verification on the devices.
+Run `python -m unittest discover -s tests -v`. The tests exercise TCP connections, synthetic screen capture, JPEG decoding, viewer rendering, and simulated input. Real desktop capture, firewall prompts, and OS shortcuts need verification on the devices.
 
 ## Feature ideas
 

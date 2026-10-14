@@ -93,18 +93,12 @@ def replay(event, gui, keys, buttons):
 
 
 def release_all(gui, keys, buttons):
-    # Cleanup must still release held input after the corner emergency stop.
-    previous = gui.FAILSAFE
-    try:
-        gui.FAILSAFE = False
-        for key in list(keys):
-            gui.keyUp(key)
-            keys.discard(key)
-        for button in list(buttons):
-            gui.mouseUp(button=button)
-            buttons.discard(button)
-    finally:
-        gui.FAILSAFE = previous
+    for key in list(keys):
+        gui.keyUp(key)
+        keys.discard(key)
+    for button in list(buttons):
+        gui.mouseUp(button=button)
+        buttons.discard(button)
 
 
 def main():
@@ -119,7 +113,7 @@ def main():
         parser.error("Use fps 1–60, quality 1–95, and max-width 64–7680")
     import pyautogui as gui
     gui.PAUSE = 0
-    gui.FAILSAFE = True
+    gui.FAILSAFE = False
     keys, buttons = set(), set()
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -131,7 +125,7 @@ def main():
         else:
             print("Find this device's Wi-Fi/Ethernet IPv4 address with ipconfig and enter it on the host.", flush=True)
         print("No authentication. Use only on a trusted network; close this terminal when finished.", flush=True)
-        print(f"Listening on {args.bind}:{args.port}. Move mouse to a screen corner to stop.", flush=True)
+        print(f"Listening on {args.bind}:{args.port}. Press Ctrl+C in this terminal to stop.", flush=True)
         try:
             while True:
                 connection, address = server.accept()
@@ -158,9 +152,6 @@ def main():
                                 if not isinstance(event, dict):
                                     raise ValueError("Expected an event object")
                                 replay(event, gui, keys, buttons)
-                    except gui.FailSafeException:
-                        print("Emergency stop triggered. Target exiting.", flush=True)
-                        return
                     except (OSError, ValueError, KeyError, TypeError) as error:
                         print(f"Connection ended: {error}", flush=True)
                     finally:
@@ -180,6 +171,6 @@ if __name__ == "__main__":
     try:
         main()
     except ImportError as error:
-        raise SystemExit(f"Missing dependency: {error}. Run install.bat on Windows.")
+        raise SystemExit(f"Missing dependency: {error}. Run python -m pip install --user -r requirements.txt.")
     except OSError as error:
         raise SystemExit(f"Target could not start: {error}. Close any previous target process and retry.")

@@ -89,7 +89,7 @@ class ProtocolTests(unittest.TestCase):
     def test_hotkey_order_cleanup_and_ping(self):
         calls = []
         class GUI:
-            FAILSAFE = True
+            FAILSAFE = False
             KEYBOARD_KEYS = ["ctrlleft", "shiftleft", "c"]
             def keyDown(self, key): calls.append(("down", key))
             def keyUp(self, key): calls.append(("up", key))
@@ -108,7 +108,7 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(calls[:3], [("down", "ctrlleft"), ("down", "shiftleft"), ("down", "c")])
         self.assertIn(("mouse_up", "left"), calls)
         self.assertFalse(keys or buttons)
-        self.assertTrue(gui.FAILSAFE)
+        self.assertFalse(gui.FAILSAFE)
 
     def test_invalid_input(self):
         class GUI:
@@ -133,10 +133,14 @@ from PIL import Image
 import target
 gui = types.ModuleType("pyautogui")
 gui.FAILSAFE = True
-gui.FailSafeException = type("FailSafeException", (Exception,), {})
 gui.KEYBOARD_KEYS = ["ctrlleft", "c"]
 gui.keyDown = lambda key: print("DOWN", key, flush=True)
 gui.keyUp = lambda key: print("UP", key, flush=True)
+gui.size = lambda: (320, 180)
+def move(x, y):
+    assert not gui.FAILSAFE, "Corner stop must be disabled"
+    print("MOVE", x, y, flush=True)
+gui.moveTo = move
 class Capture:
     monitors = [None, {}]
     def __enter__(self): return self
@@ -165,6 +169,7 @@ with patch("mss.mss", Capture): target.main()
                     self.assertEqual(reader.readline(), b'{"ok":true}\n')
                 with Image.open(io.BytesIO(host.receive_frame(connection))) as frame:
                     self.assertEqual(frame.size, (320, 180))
+                connection.sendall(b'{"type":"move","x":0,"y":0}\n')
                 for key in ["ctrlleft", "c"]:
                     connection.sendall((json.dumps({"type": "key", "key": key, "pressed": True}) + "\n").encode())
                 connection.sendall(b'{"type":"reset"}\n')
@@ -174,7 +179,7 @@ with patch("mss.mss", Capture): target.main()
         finally:
             process.terminate()
             output, _ = process.communicate(timeout=5)
-        for message in ["Listening on 0.0.0.0", "Host connected", "DOWN ctrlleft", "DOWN c", "UP ctrlleft", "UP c"]:
+        for message in ["Listening on 0.0.0.0", "Host connected", "MOVE 0 0", "DOWN ctrlleft", "DOWN c", "UP ctrlleft", "UP c"]:
             self.assertIn(message, output)
 
     def test_real_viewer_render_input_and_focus_loss(self):
