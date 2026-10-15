@@ -2,12 +2,18 @@
 import argparse
 import io
 import json
+from datetime import datetime
+from pathlib import Path
 import socket
 import struct
+import sys
+import tempfile
 import threading
 import time
+import traceback
 
 MAX_FRAME_BYTES = 16 * 1024 * 1024
+ERROR_LOG_PATH = Path(__file__).with_name("host-error.log")
 KEY_ALIASES = {
     "left ctrl": "ctrlleft", "right ctrl": "ctrlright",
     "left shift": "shiftleft", "right shift": "shiftright",
@@ -78,11 +84,21 @@ def main():
         parser.error("Enter the IP address shown by the target")
     import pygame
 
-    with socket.create_connection((args.target, args.port), timeout=10) as connection:
+    print(f"Connecting to {args.target}:{args.port}...", flush=True)
+    try:
+        connection = socket.create_connection((args.target, args.port), timeout=10)
+    except TimeoutError as error:
+        raise TimeoutError(f"Could not reach {args.target}:{args.port}. Check the target is listening, its IP, and firewall/network access.") from error
+    with connection:
         connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        print("TCP connected. Waiting for the target's response...", flush=True)
         # An unbuffered read leaves the first binary frame in the socket.
         with connection.makefile("rb", buffering=0) as reader:
-            if reader.readline(1024) != b'{"ok":true}\n':
+            try:
+                greeting = reader.readline(1024)
+            except TimeoutError as error:
+                raise TimeoutError("TCP connected, but the target did not respond. Update both scripts to the latest version and check the target terminal.") from error
+            if greeting != b'{"ok":true}\n':
                 raise RuntimeError("Unexpected server response. Update both devices to the latest scripts.")
         connection.settimeout(10)
         stopped = threading.Event()
@@ -99,7 +115,8 @@ def main():
                         latest = data  # Drop old frames to bound latency and memory.
             except (OSError, ValueError) as exc:
                 if not stopped.is_set():
-                    error = str(exc)
+                    error = (TimeoutError("Screen stream timed out. Check the target terminal for capture errors.")
+                             if isinstance(exc, TimeoutError) else exc)
                 stopped.set()
 
         def send(event):
@@ -182,7 +199,7 @@ def main():
                 pygame.display.set_caption(f"Remote control — {status} — F8 toggles input")
                 pygame.display.flip()
                 clock.tick(60)
-        except (KeyboardInterrupt, OSError):
+        except KeyboardInterrupt:
             pass
         finally:
             try:
@@ -197,15 +214,37 @@ def main():
             receiver.join(timeout=2)
             pygame.quit()
         if error:
-            raise ConnectionError(error)
+            raise error
+
+
+def run():
+    """Keep Python errors visible when launched by double-clicking on Windows."""
+    try:
+        main()
+    except KeyboardInterrupt:
+        return 0
+    except Exception:
+        details = traceback.format_exc()
+        print(details, file=sys.stderr, flush=True)
+        for path in (ERROR_LOG_PATH, Path(tempfile.gettempdir()) / "remote-control-host-error.log"):
+            try:
+                with path.open("a", encoding="utf-8") as log:
+                    log.write(f"\n--- {datetime.now().isoformat(timespec='seconds')} ---\n")
+                    log.write(details)
+                print(f"Error details saved to: {path}", flush=True)
+                break
+            except OSError:
+                continue
+        else:
+            print("Could not save the error log. Copy the error above.", flush=True)
+        print("If the target is running, check its terminal for an error too.", flush=True)
+        try:
+            input("Press Enter to close...")
+        except (EOFError, OSError, RuntimeError, KeyboardInterrupt):
+            pass
+        return 1
+    return 0
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except ImportError as error:
-        raise SystemExit(f"Missing dependency: {error}. Run python -m pip install --user -r requirements.txt.")
-    except OSError as error:
-        raise SystemExit(f"Connection failed: {error}. Check the target is running, its IP, and TCP port 5050 access.")
-    except KeyboardInterrupt:
-        pass
+    sys.exit(run())

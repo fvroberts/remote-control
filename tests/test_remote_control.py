@@ -1,10 +1,12 @@
 import io
 import json
 import os
+from pathlib import Path
 import socket
 import struct
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import unittest
@@ -118,6 +120,33 @@ class ProtocolTests(unittest.TestCase):
                       {"type": "key", "key": "a", "pressed": "yes"}]:
             with self.assertRaises(ValueError):
                 target.replay(event, GUI(), set(), set())
+
+
+class CrashReportingTests(unittest.TestCase):
+    def test_pygame_error_is_logged_and_waits_before_exit(self):
+        import pygame
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "host-error.log"
+            output = io.StringIO()
+            with patch.object(host, "main", side_effect=pygame.error("Video setup failed")), \
+                 patch.object(host, "ERROR_LOG_PATH", path), \
+                 patch("builtins.input", return_value="") as prompt, \
+                 patch.object(sys, "stderr", output), patch.object(sys, "stdout", output):
+                self.assertEqual(host.run(), 1)
+            self.assertIn("Video setup failed", path.read_text())
+            self.assertIn("Traceback", path.read_text())
+            self.assertIn(str(path), output.getvalue())
+            prompt.assert_called_once_with("Press Enter to close...")
+
+    def test_unwritable_project_falls_back_to_temp_and_handles_no_console(self):
+        with tempfile.TemporaryDirectory() as folder:
+            with patch.object(host, "main", side_effect=ConnectionError("Target disconnected")), \
+                 patch.object(host, "ERROR_LOG_PATH", Path(folder) / "missing" / "host-error.log"), \
+                 patch.object(host.tempfile, "gettempdir", return_value=folder), \
+                 patch("builtins.input", side_effect=EOFError), \
+                 patch.object(sys, "stderr", io.StringIO()), patch.object(sys, "stdout", io.StringIO()):
+                self.assertEqual(host.run(), 1)
+            self.assertIn("Target disconnected", (Path(folder) / "remote-control-host-error.log").read_text())
 
 
 class ViewerTests(unittest.TestCase):

@@ -46,6 +46,7 @@ For a slower network, run `python target.py --fps 10 --quality 50 --max-width 12
 
 ## Troubleshooting
 
+- **Host closes or crashes:** open Command Prompt in the project folder and run `python host.py`. Python errors are printed, saved to `host-error.log` beside the script, and held open until you press Enter. If that folder is read-only, the log goes to `%TEMP%\remote-control-host-error.log` on Windows. Share the final error lines and check the target terminal too. The saved error is needed to diagnose the cause.
 - **Missing packages:** run the install command above. Package installation must be permitted by your device policy; TLS certificate verification remains enabled.
 - **Legacy pygame installed:** run `python -m pip uninstall pygame`, then `python -m pip install --user --only-binary=:all: --force-reinstall pygame-ce==2.5.8`. The two packages share import files, so reinstall pygame-ce after removing pygame.
 - **Python command not found:** try `py -3` in place of `python` in the commands above.
